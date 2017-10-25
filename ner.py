@@ -40,7 +40,7 @@ def _create_feature_ids(training_file_str, features, locations):
     # Add feature entries for abbreviation, capitalization, and location
     _add_abbreviation(features, feature_ids, current_id)
     _add_capitalization(features, feature_ids, current_id)
-    _add_location(features, locations, feature_ids, current_id)
+    _add_location(features, feature_ids, current_id)
 
     # Add entries for the special cases PHI, UNK, etc.
     _add_pseudos(feature_ids, current_id)
@@ -129,22 +129,19 @@ def _add_pos_context(sentence, i, features, feature_ids, current_id):
 def _add_abbreviation(features, feature_ids, current_id):
     if "ABBR" not in features:
         return
-    feature_ids["abbreviated"] = current_id[0]
-    current_id[0] += 1
+    feature_ids["abbreviated"] = current_id[0]; current_id[0] += 1
 
-# Adds a feature  to feature_ids indicating whether a word is capitalized or not
+# Adds a feature to feature_ids indicating whether a word is capitalized or not
 def _add_capitalization(features, feature_ids, current_id):
     if "CAP" not in features:
         return
-    feature_ids["capitalized"] = current_id[0]
-    current_id[0] += 1
+    feature_ids["capitalized"] = current_id[0]; current_id[0] += 1
 
-# Adds each location provided in the location file to feature_ids
-def _add_location(features, locations, feature_ids, current_id):
+# Adds a feature to feature_ids indicating whether a word is a location or not
+def _add_location(features, feature_ids, current_id):
     if "LOCATION" not in features:
         return
-    for location in locations:
-        feature_ids["location-" + location] = current_id[0]; current_id[0] += 1
+    feature_ids["is-location"] = current_id[0]; current_id[0] += 1
 
 # Add entries into feature_ids dictionary for the special cases PHI, UNK, etc.
 def _add_pseudos(feature_ids, current_id):
@@ -176,12 +173,12 @@ def _generate_files_from_training_set(training_file_str, feature_ids, locations,
 
     while line:
         # Build up a sentence like so: [[B-LOC,NNP,Israel], [O,NN,television], ...]
-        if line.strip():
+        if line.strip(): # line is not empty
             sentence.append(line.split())
         else:
             if len(sentence) != 0: # Nec. bc there can be consecutive blank lines
                 _write_sentence_to_readable(sentence, features, locations, readable_file)
-                #_write_sentence_to_vector(sentence, features, locations, feature_ids, vector_file)
+                _write_sentence_to_vector(sentence, features, locations, feature_ids, vector_file)
                 sentence.clear() # empty the list to accommodate next sentence
         line = training_file.readline()
 
@@ -254,7 +251,7 @@ def _get_abbreviation(sentence, i, features, set_type):
     word = sentence[i][2]
     # Abbreviations end with a period and consists entirely of alphabetic
     # characters and 1 or more periods, and are less than 5 characters
-    pattern = re.compile("^(.*[a-zA-Z]+.*)*)$")
+    pattern = re.compile("^(.*[a-zA-Z]+.*)*$")
     if pattern.match(word) and len(word) < 5:
         return "yes"
     else:
@@ -278,6 +275,171 @@ def _get_location(sentence, i, features, locations, set_type):
     else:
         return "no"
 
+# Writes each word in the sentence to a vector output file
+def _write_sentence_to_vector(sentence, features, locations, feature_ids, vector_file):
+    ids = []
+    label = None # initialize integer representation of the word's label
+    # Write info to vector file for each word in the sentence
+    for i in range(len(sentence)):
+        label = _label2int(sentence[i][0])
+        vector_file.write(str(_label2int(sentence[i][0])) + " ")
+        ids.append(_get_word_id(sentence,i, feature_ids))
+        ids += _get_word_context_ids(sentence,i, features, feature_ids)
+        ids.append(_get_pos_id(sentence, i, features, feature_ids))
+        ids += _get_pos_context_ids(sentence, i, features, feature_ids)
+        ids.append(_get_abbreviation_id(sentence, i, features, feature_ids))
+        ids.append(_get_capitalization_id(sentence, i, features, feature_ids))
+        ids.append(_get_location_id(sentence, i, features, feature_ids, locations))
+        _print_vector(label, ids)
+        ids.clear()
+
+# Returns an integer corresponding to the given BIO label
+def _label2int(label):
+    if label == "O":
+        return 0
+    elif label == "B-PER":
+        return 1
+    elif label == "I-PER":
+        return 2
+    elif label == "B-LOC":
+        return 3
+    elif label == "I-LOC":
+        return 4
+    elif label == "B-ORG":
+        return 5
+    elif label == "I-ORG":
+        return 6
+    else:
+        raise Exception("Received a bad BIO label!")
+
+# Returns the id for the word sentence[i][2], or the id for "word-UNK"
+# if the word doesn't have an associated id
+def _get_word_id(sentence,i, feature_ids):
+    word = sentence[i][2]
+    if ("word-" + word) in feature_ids:
+        word_id = feature_ids[("word-" + word)]
+    else:
+        word_id = feature_ids["word-UNK"]
+    return word_id
+
+# Returns the two id numbers associated with the words before and after the word
+# sentence[i][3]. If word context is not in the features set, returns None
+# If ids are not found for the previous and/or next words, returns "prev-word-UNK"
+# and "next-word-UNK" respectively
+def _get_word_context_ids(sentence,i, features, feature_ids):
+    if "WORDCON" not in features:
+        return None
+    prev_word_id = None
+    if i == 0:
+        prev_word_id = feature_ids["prev-word-PHI"]
+    else:
+        prev_word = sentence[i-1][2]
+        if ("prev-word-" + prev_word) in feature_ids:
+            prev_word_id = feature_ids[("prev-word-" + prev_word)]
+        else:
+            prev_word_id = feature_ids["prev-word-UNK"]
+
+    # Now get the id for the following word
+    next_word_id = None
+    if i == len(sentence)-1:
+        next_word_id = feature_ids["next-word-OMEGA"]
+    else:
+        next_word = sentence[i+1][2]
+        if ("next-word-" + next_word) in feature_ids:
+            next_word_id = feature_ids[("next-word-" + next_word)]
+        else:
+            next_word_id = feature_ids["next-word-UNK"]
+
+    return [prev_word_id, next_word_id]
+
+# Returns the id number associated with the POS tag for
+# sentence[i][3]. But if POS is not in the features set, returns None
+def _get_pos_id(sentence, i, features, feature_ids):
+    if "POS" not in features:
+        return None
+    pos = sentence[i][1]
+    pos_id = None
+    if ("pos-" + pos) in feature_ids:
+        pos_id = feature_ids[("pos-" + pos)]
+    else:
+        pos_id = feature_ids["UNKPOS"]
+    return pos_id
+
+# Returns the two id numbers associated with the pos tags before and after the pos tag
+# sentence[i][1]. If pos context is not in the features set, returns None
+# If ids are not found for the previous and/or next pos, returns "prev-pos-UNKPOS"
+# and "next-pos-UNKPOS" respectively
+def _get_pos_context_ids(sentence, i, features, feature_ids):
+    if "POSCON" not in features:
+        return None
+    prev_pos_id = None
+    if i == 0:
+        prev_pos_id = feature_ids["prev-pos-PHIPOS"]
+    else:
+        prev_pos = sentence[i-1][1]
+        if ("prev-pos-" + prev_pos) in feature_ids:
+            prev_pos_id = feature_ids[("prev-pos-" + prev_pos)]
+        else:
+            prev_pos_id = feature_ids["prev-pos-UNK"]
+
+    next_pos_id = None
+    if i == len(sentence)-1:
+        next_pos_id = feature_ids["next-pos-OMEGAPOS"]
+    else:
+        next_pos = sentence[i+1][1]
+        if ("next-pos-" + next_pos) in feature_ids:
+            next_pos_id = feature_ids[("next-pos-" + next_pos)]
+        else:
+            next_pos_id = feature_ids["next-pos-UNK"]
+
+    return [prev_pos_id, next_pos_id]
+
+# Returns the id number of the abbreviation feature
+# But if ABBR is not in the features set, returns None
+def _get_abbreviation_id(sentence, i, features, feature_ids):
+    if "ABBR" not in features:
+        return None
+    if _get_abbreviation(sentence, i, features, "train") == "yes":
+        return feature_ids["abbreviated"]
+    else:
+        return None
+
+# Returns the id number of the capitalization feature
+# But if CAP is not in the features set, returns None
+def _get_capitalization_id(sentence, i, features, feature_ids):
+    if "CAP" not in features:
+        return None
+    if _get_capitalization(sentence, i, features, "train") == "yes":
+        return feature_ids["capitalized"]
+    else:
+        return None
+
+# Returns the id number of the location feature
+# But if LOCATION is not in the features set, returns None
+def _get_location_id(sentence, i, features, feature_ids, locations):
+    if "LOCATION" not in features:
+        return None
+    if _get_location(sentence, i, features, locations, "train") == "yes":
+        return feature_ids["is-location"]
+    else:
+        return None
+
+# Sorts in ascending order an array of feature ideas for a word, and then prints
+# on a single line like so: <label> <feature_id1>:1  <feature_id2>:1 ...
+def _print_vector(label, ids):
+    print(str(label), end=" ")
+
+    # Populate a new array with ids but no None elements from the id array
+    condensed_ids = []
+    for id in ids:
+        if id != None:
+            condensed_ids.append(id)
+
+    condensed_ids.sort()
+    for id in condensed_ids:
+        print(str(id), end=":1 ")
+    print("") #  Next word on a new line
+
 ##### START OF PROGRAM #####
 
 if len(sys.argv) < 5 or len(sys.argv) > 11:
@@ -289,7 +451,7 @@ locations = _get_locations(sys.argv[3])
 features = _get_features(sys.argv)
 feature_ids = _create_feature_ids(sys.argv[1], features, locations)
 
-_generate_files_from_training_set(sys.argv[1], feature_ids, locations, features)
+for item in sorted(feature_ids.items(), key=lambda x: x[1], reverse=True):
+    print(item)
 
-# for item in sorted(feature_ids.items(), key=lambda x: x[1], reverse=True):
-#     print(item)
+_generate_files_from_training_set(sys.argv[1], feature_ids, locations, features)
