@@ -1,4 +1,26 @@
-# Written by Jackson Murphy.
+# Creates files that can be used to build a machine learning classifier for
+# Named Entity Recognition (NER). Supports 3 types of named entities:
+# People, Locations, and Organizations.
+#
+# Input: a training file, a test file, a locations file, and a list of
+#       which feature types to use. WORD is mandatory, the rest are optional:
+#       part-of-speech tag (POS), part-of-speech tag context (POSCON),
+#       word context (WORDCON), capitalized word (CAP), abbreviated word (ABBR),
+#       and location (LOCATION).  See assignment doc for more details...
+#
+# Example:
+#           $ ner.py train.txt test.txt locs.txt WORD WORDPOS CAP POS LOCATION
+#
+# Output:
+#           train.txt.vector: can be supplied to liblinear program to train a classifier
+#           test.txt.vector: determine the accuracy of your classifier by running it on this file
+#
+#           train.txt.readable and test.txt.readable:
+#                           human-readable files showing how this program applied
+#                           features to the words in the training and test input files
+#
+# University Of Utah Natural Language Processing, Assignment 3
+# Written by Jackson Murphy. Last updated October 25, 2017
 
 import re
 import sys
@@ -512,9 +534,6 @@ if len(sys.argv) < 5 or len(sys.argv) > 11:
 locations = _get_locations(sys.argv[3])
 feature_types = _get_feature_types(sys.argv)
 feature_ids = _create_feature_ids(sys.argv[1], feature_types, locations)
-
-# for item in sorted(feature_ids.items(), key=lambda x: x[1], reverse=True):
-#     print(item)
 
 _generate_files_from_training_set(sys.argv[1], feature_ids, locations, feature_types)
 _generate_files_from_test_set(sys.argv[2], feature_ids, locations, feature_types)
