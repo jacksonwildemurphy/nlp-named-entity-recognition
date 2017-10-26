@@ -24,7 +24,7 @@ def _get_feature_types(argv):
 # Returns a dictionary of all possible feature ids
 def _create_feature_ids(training_file_str, feature_types, locations):
     feature_ids = {}
-    current_id = [0] # array instead of int to get pass-by-reference
+    current_id = [1] # initialize; array instead of int to get pass-by-reference
     training_file = open(training_file_str)
     sentence = [] # initialize the first sentence
     line = training_file.readline()
